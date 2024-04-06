@@ -8,9 +8,8 @@ const uint16_t DIMENSION = 3;
 
 static const uint16_t ROWS = DIMENSION * DIMENSION;
 static const uint16_t COLS = DIMENSION * DIMENSION;
+static const uint16_t BOXES = DIMENSION * DIMENSION;
 static const uint16_t NUM_CELLS = DIMENSION * DIMENSION * DIMENSION * DIMENSION;
-
-static const uint16_t MAX_WIDTH = 2;
 
 // Each cell is a 16 bit number representing the state of the cell
 // If Bit 16 is set, then the 8 lsbs represent the value of the cell
@@ -63,8 +62,7 @@ const uint16_t COL_INDEX[NUM_CELLS] =
 };
 
 // Index of top left of each Box
-
-const uint16_t BOX_INDEX[NUM_CELLS] =
+const uint16_t BOX_FIRST_INDEX[NUM_CELLS] =
 {
 	 0,  0,  0,  3,  3,  3,  6,  6,  6,
 	 0,  0,  0,  3,  3,  3,  6,  6,  6,
@@ -75,6 +73,34 @@ const uint16_t BOX_INDEX[NUM_CELLS] =
 	54, 54, 54, 57, 57, 57, 60, 60, 60,
 	54, 54, 54, 57, 57, 57, 60, 60, 60,
 	54, 54, 54, 57, 57, 57, 60, 60, 60
+};
+
+// Index of box 0 - 8
+const uint16_t BOX_INDEX[NUM_CELLS] =
+{
+	0, 0, 0, 1, 1, 1, 2, 2, 2,
+	0, 0, 0, 1, 1, 1, 2, 2, 2,
+	0, 0, 0, 1, 1, 1, 2, 2, 2,
+	3, 3, 3, 4, 4, 4, 5, 5, 5,
+	3, 3, 3, 4, 4, 4, 5, 5, 5,
+	3, 3, 3, 4, 4, 4, 5, 5, 5,
+	6, 6, 6, 7, 7, 7, 8, 8, 8,
+	6, 6, 6, 7, 7, 7, 8, 8, 8,
+	6, 6, 6, 7, 7, 7, 8, 8, 8
+};
+
+// Row/Col Index for Each box
+const uint16_t BOX_ROW[BOXES] =
+{
+	0,  0,  0,
+	3,  3,  3,
+	6,  6,  6
+};
+const uint16_t BOX_COL[BOXES] =
+{
+	0,  3,  6,
+	0,  3,  6,
+	0,  3,  6
 };
 
 // Get the number from a cell with only 1 bit set
@@ -94,22 +120,36 @@ void updateRow(uint16_t row, uint16_t col, uint16_t value);
 void updateCol(uint16_t row, uint16_t col, uint16_t value);
 void updateBox(uint16_t row, uint16_t col, uint16_t value);
 
-// Check if a given value is valid for the given cell
-bool checkCell(uint16_t row, uint16_t col, uint16_t value);
+// Check all Rows/Cols/Boxes for any last possible values
+bool checkCell(uint16_t idx);
+bool checkCells();
+bool checkRows();
+bool checkCols();
+bool checkBoxes();
 
-bool checkRow(uint16_t row, uint16_t col, uint16_t value);
-bool checkCol(uint16_t row, uint16_t col, uint16_t value);
-bool checkBox(uint16_t row, uint16_t col, uint16_t value);
+// Get the index of the last reamining posibility in a row/col for a given value
+uint16_t getLastInRow(uint16_t row, uint16_t value);
+uint16_t getLastInCol(uint16_t col, uint16_t value);
+uint16_t getLastInBox(uint16_t box, uint16_t value);
+
+// Check for Naked Pairs
+bool checkNakedBoxes();
+bool checkNakedRows();
+bool checkNakedCols();
 
 // Print the grid
-void printGrid();
+void printGrid(bool debug = false);
 
-void printCell(uint16_t cellValuee);
-void printSolvedCell(uint16_t cellValue);
+void printCell(uint16_t cellValuee, bool debug);
+void printSolvedCell(uint16_t cellValue, bool debug);
 
 // 16-bit Hamming Weight
 // https://stackoverflow.com/questions/9946115/hamming-weight-written-only-in-binary-operations
 uint16_t popCount(uint16_t n);
+
+// Statistics
+uint16_t numReads = 0;
+uint16_t numWrites = 0;
 
 int main(uint16_t argc, char* argv[])
 {
@@ -119,89 +159,82 @@ int main(uint16_t argc, char* argv[])
 		grid[i] = 0x03FE;
 	}
 
-	// Taken from an instance of https://www.sudoku.com/easy
-	updateCell(0, 3);
-	updateCell(1, 4);
-	//updateCell(5, 7);
-	//updateCell(7, 2);
-	//updateCell(8, 6);
+	// Taken from an instance of https://qqwing.com/generate.html
+	const char* sudokuString = "5..8.7..6.87.....9....5...2.9..82.14.2.1....541.6.......6.18......9.6...9..57....";
 
-	updateCell(10, 2);
-	updateCell(14, 4);
-	//updateCell(15, 8);
-	updateCell(17, 1);
-
-	updateCell(20, 1);
-	updateCell(21, 2);
-	updateCell(23, 5);
-
-	updateCell(27, 2);
-	updateCell(28, 5);
-	updateCell(30, 6);
-
-	updateCell(36, 6);
-	//updateCell(37, 8);
-	//updateCell(39, 9);
-	updateCell(42, 3);
-	updateCell(43, 4);
-
-	updateCell(46, 1);
-	updateCell(48, 4);
-	updateCell(50, 2);
-	updateCell(53, 8);
-
-	updateCell(54, 1);
-	updateCell(55, 6);
-	updateCell(58, 8);
-	updateCell(59, 9);
-	updateCell(61, 3);
-
-	updateCell(63, 4);
-	updateCell(65, 9);
-	//updateCell(67, 2);
-	updateCell(69, 6);
-
-	updateCell(74, 8);
-	updateCell(75, 7);
-	//updateCell(76, 4);
-	updateCell(77, 6);
-	updateCell(78, 2);
+	for (int i = 0; i < NUM_CELLS; ++i)
+	{
+		if (sudokuString[i] != '.')
+		{
+			updateCell(i, sudokuString[i] - '0');
+		}
+	}
 
 	printGrid();
 
+	// Reset Statistics after setup
+	numReads = 0;
+	numWrites = 0;
 	auto start = std::chrono::high_resolution_clock::now();
 
-
-	// Check for any cells with 1 remaining option
-	bool updatedCell = true;
-	while (updatedCell)
+	// Check for any cells/Rows/Cols/Boxes with 1 remaining option
+	bool updatedCells = true;
+	while (updatedCells)
 	{
-		updatedCell = false;
+		updatedCells = false;
 
-		for (uint16_t i = 0; i < NUM_CELLS; ++i)
-		{
-			uint16_t value = grid[i];
+		updatedCells = updatedCells || checkCells();
+		updatedCells = updatedCells || checkBoxes();
+		updatedCells = updatedCells || checkRows();
+		updatedCells = updatedCells || checkCols();
 
-			// If only 1 bit is set
-			if (popCount(value) == 1)
-			{
-				updateCell(i, getNumber(value));
-				updatedCell = true;
+		updatedCells = updatedCells || checkNakedRows();
+		updatedCells = updatedCells || checkNakedCols();
+		updatedCells = updatedCells || checkNakedBoxes();
 
-				//printGrid();
-			}
-		}
 	}
 
 	auto stop = std::chrono::high_resolution_clock::now();
 
-
 	printGrid();
 
+	// Check if grid was completed or nah
+	uint16_t numFailed = 0;
+	for (int i = 0; i < NUM_CELLS; ++i)
+	{
+		if ((grid[i] & SOLVED) == 0)
+		{
+			++numFailed;
+		}
+	}
+
 	auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+	if (numFailed > 0)
+	{
+		printGrid(true);
+		std::cout << "FAILURE!!" << std::endl;
+		std::cout << "Num Missed:" << numFailed << std::endl;
+		for (int i = 0; i < NUM_CELLS; ++i)
+		{
+			if ((grid[i] & SOLVED) == 0)
+			{
+				std::cout << '.';
+			}
+			else
+			{
+				std::cout << (grid[i] & ~(SOLVED));
+			}
+		}
+		std::cout << std::endl;
+	}
+	else
+	{
+		std::cout << "SUCCESS!!" << std::endl;
+	}
+
 	std::cout << "Time Taken: " << duration.count() << "us" << std::endl;
-
-
+	std::cout << "Num Writes: " << numWrites << std::endl;
+	std::cout << "Num Reads : " << numReads << std::endl;
 
 	return 0;
 }
@@ -232,13 +265,14 @@ uint16_t getBox(uint16_t row, uint16_t col)
 {
 	uint16_t idx = getIndex(row, col);
 
-	return BOX_INDEX[idx];
+	return BOX_FIRST_INDEX[idx];
 }
 
 // Set a given cell to a given value, and update all possibilities
 void updateCell(uint16_t row, uint16_t col, uint16_t value)
 {
 	grid[getIndex(row, col)] = SOLVED | value;
+	++numWrites;
 
 	updateRow(row, col, value);
 	updateCol(row, col, value);
@@ -259,10 +293,15 @@ void updateRow(uint16_t row, uint16_t col, uint16_t value)
 	{
 		uint16_t idx = getIndex(row, c);
 		// Only update un-solved cells
+		++numReads;
 		if ((grid[idx] & SOLVED) == 0)
 		{
 			// Bitwise AND with the ones compiment of the value to switch off only that bit
 			grid[idx] &= ~(NUMBERS[value]);
+			++numWrites;
+
+			// Check if there is now only one possible value for this cell
+			checkCell(idx);
 		}
 	}
 }
@@ -273,10 +312,15 @@ void updateCol(uint16_t row, uint16_t col, uint16_t value)
 	{
 		uint16_t idx = getIndex(r, col);
 		// Only update un-solved cells
+		++numReads;
 		if ((grid[idx] & SOLVED) == 0)
 		{
 			// Bitwise AND with the ones compiment of the value to switch off only that bit
 			grid[idx] &= ~(NUMBERS[value]);
+			++numWrites;
+
+			// Check if there is now only one possible value for this cell
+			checkCell(idx);
 		}
 	}
 }
@@ -298,60 +342,639 @@ void updateBox(uint16_t row, uint16_t col, uint16_t value)
 		{
 			uint16_t idx = getIndex(r, c);
 			// Only update un-solved cells
+			++numReads;
 			if ((grid[idx] & SOLVED) == 0)
 			{
 				// Bitwise AND with the ones compiment of the value to switch off only that bit
 				grid[idx] &= ~(NUMBERS[value]);
+				++numWrites;
+
+				// Check if there is now only one possible value for this cell
+				checkCell(idx);
 			}
 		}
 	}
 }
 
-
-// Check if a given value is valid for the given cell
-bool checkCell(uint16_t row, uint16_t col, uint16_t value)
+// Check all Rows/Cols/Boxes for any last possible values
+bool checkCell(uint16_t idx)
 {
-	uint16_t idx = getIndex(row, col);
+	++numReads;
+	uint16_t value = grid[idx];
 
-	// Solved Cells can not be changed
-	if ((grid[idx] & SOLVED) == SOLVED)
+	// Only calculate on un-solved cells
+	if ((value & SOLVED) != SOLVED)
 	{
-		// Make sure the cell is already the given value
-		if ((grid[idx] & ~(SOLVED)) == value)
+		// If only 1 bit is set
+		if (popCount(value) == 1)
 		{
+			updateCell(idx, getNumber(value));
 			return true;
 		}
-		return false;
-	}
-
-	// Check if an unsolved cell is able to be the given value
-	if ((grid[idx] & NUMBERS[value]) == NUMBERS[value])
-	{
-		return true;
 	}
 
 	return false;
 }
 
-
-bool checkRow(uint16_t row, uint16_t col, uint16_t value)
+bool checkCells()
 {
-	return true;
+	bool anyCellsUpdated = false;
+
+	bool updatedCell = true;
+	while (updatedCell)
+	{
+		updatedCell = false;
+
+		for (uint16_t i = 0; i < NUM_CELLS; ++i)
+		{
+			updatedCell = checkCell(i);
+			if (updatedCell)
+			{
+				anyCellsUpdated = true;
+			}
+		}
+	}
+
+	return anyCellsUpdated;
 }
 
-bool checkCol(uint16_t row, uint16_t col, uint16_t value)
+bool checkRows()
 {
-	return true;
+	bool anyCellsUpdated = false;
+	// Check for any cells that are the only remaining option for the Row
+	uint16_t last = NUM_CELLS;
+	bool updatedCell = true;
+	while (updatedCell)
+	{
+		updatedCell = false;
+
+		// For Each Row
+		for (uint16_t i = 0; i < COLS; ++i)
+		{
+			// For each value
+			for (uint16_t val = 1; val < 10; ++val)
+			{
+				// If there is a single cell that is the last possibility for this value
+				last = getLastInCol(i, val);
+				if (last != NUM_CELLS)
+				{
+					updateCell(last, val);
+					updatedCell = true;
+					anyCellsUpdated = true;
+				}
+			}
+
+		}
+	}
+
+	return anyCellsUpdated;
 }
 
-bool checkBox(uint16_t row, uint16_t col, uint16_t value)
+bool checkCols()
 {
-	return true;
+	bool anyCellsUpdated = false;
+	// Check for any cells that are the only remaining option for the Col
+	uint16_t last = NUM_CELLS;
+	bool updatedCell = true;
+	while (updatedCell)
+	{
+		updatedCell = false;
+
+		// For Each Col
+		for (uint16_t i = 0; i < COLS; ++i)
+		{
+			// For each value
+			for (uint16_t val = 1; val < 10; ++val)
+			{
+				// If there is a single cell that is the last possibility for this value
+				last = getLastInCol(i, val);
+				if (last != NUM_CELLS)
+				{
+					updateCell(last, val);
+					updatedCell = true;
+					anyCellsUpdated = true;
+				}
+			}
+		}
+	}
+
+	return anyCellsUpdated;
+}
+
+bool checkBoxes()
+{
+	bool anyCellsUpdated = false;
+	// Check for any cells that are the only remaining option for the Box
+	uint16_t last = NUM_CELLS;
+	bool updatedCell = true;
+	while (updatedCell)
+	{
+		updatedCell = false;
+
+		// For Each Box
+		for (uint16_t i = 0; i < BOXES; ++i)
+		{
+			// For each value
+			for (uint16_t val = 1; val < 10; ++val)
+			{
+				// If there is a single cell that is the last possibility for this value
+				last = getLastInBox(i, val);
+				if (last != NUM_CELLS)
+				{
+					updateCell(last, val);
+					updatedCell = true;
+					anyCellsUpdated = true;
+				}
+			}
+		}
+	}
+
+	return anyCellsUpdated;
+}
+
+uint16_t getLastInRow(uint16_t row, uint16_t value)
+{
+	uint16_t count = 0;
+	uint16_t index = NUM_CELLS;
+
+	for (uint16_t c = 0; c < COLS; ++c)
+	{
+		uint16_t idx = getIndex(row, c);
+
+		// Check if a solved cell matches the value
+		++numReads;
+		uint16_t gridValue = grid[idx];
+
+		if ((gridValue & SOLVED) == SOLVED)
+		{
+			if ((gridValue & ~(SOLVED)) == value)
+			{
+				return NUM_CELLS;
+			}
+		}
+		// Check if an un-solved cell is able to be that value
+		else
+		{
+			if ((gridValue & NUMBERS[value]) == NUMBERS[value])
+			{
+				index = idx;
+				++count;
+			}
+		}
+	}
+
+	// If there was only one possibility found
+	if (count == 1)
+	{
+		return index;
+	}
+
+	return NUM_CELLS;
+}
+
+uint16_t getLastInCol(uint16_t col, uint16_t value)
+{
+	uint16_t count = 0;
+	uint16_t index = NUM_CELLS;
+
+	for (uint16_t r = 0; r < ROWS; ++r)
+	{
+		uint16_t idx = getIndex(r, col);
+
+		// Check if a solved cell matches the value
+		++numReads;
+		uint16_t gridValue = grid[idx];
+
+		if ((gridValue & SOLVED) == SOLVED)
+		{
+			if ((gridValue & ~(SOLVED)) == value)
+			{
+				return NUM_CELLS;
+			}
+		}
+		// Check if an un-solved cell is able to be that value
+		else
+		{
+			if ((gridValue & NUMBERS[value]) == NUMBERS[value])
+			{
+				index = idx;
+				++count;
+			}
+		}
+	}
+
+	// If there was only one possibility found
+	if (count == 1)
+	{
+		return index;
+	}
+
+	return NUM_CELLS;
+}
+
+uint16_t getLastInBox(uint16_t box, uint16_t value)
+{
+	uint16_t count = 0;
+	uint16_t index = NUM_CELLS;
+
+	// Get the Row of the first box cell
+	uint16_t startRow = BOX_ROW[box];
+
+	// Get the Col of the first box cell
+	uint16_t startCol = BOX_COL[box];
+
+	for (uint16_t r = startRow; r < startRow + DIMENSION; ++r)
+	{
+		for (uint16_t c = startCol; c < startCol + DIMENSION; ++c)
+		{
+			uint16_t idx = getIndex(r, c);
+
+			// Check if a solved cell matches the value
+			++numReads;
+			uint16_t gridValue = grid[idx];
+
+			if ((gridValue & SOLVED) == SOLVED)
+			{
+				if ((gridValue & ~(SOLVED)) == value)
+				{
+					return NUM_CELLS;
+				}
+			}
+			// Check if an un-solved cell is able to be that value
+			else
+			{
+				if ((gridValue & NUMBERS[value]) == NUMBERS[value])
+				{
+					index = idx;
+					++count;
+				}
+			}
+		}
+	}
+
+	// If there was only one possibility found
+	if (count == 1)
+	{
+		return index;
+	}
+
+	return NUM_CELLS;
+}
+
+// Check for Naked Pairs
+bool checkNakedBoxes()
+{
+	bool anyCellsUpdated = false;
+
+	// For Each Box
+	for (uint16_t b = 0; b < BOXES; ++b)
+	{
+		// Get the Row of the first box cell
+		uint16_t startRow = BOX_ROW[b];
+
+		// Get the Col of the first box cell
+		uint16_t startCol = BOX_COL[b];
+
+		// For each value
+		for (uint16_t val = 1; val < 10; ++val)
+		{
+			uint16_t lastPossibleRow = ROWS;
+			bool sameRow = false;
+			bool diffRows = false;
+
+			uint16_t lastPossibleCol = COLS;
+			bool sameCol = false;
+			bool diffCols = false;
+
+
+			//  For Each cell in Box
+			for (uint16_t r = startRow; r < startRow + DIMENSION; ++r)
+			{
+				for (uint16_t c = startCol; c < startCol + DIMENSION; ++c)
+				{
+					uint16_t idx = getIndex(r, c);
+
+					// Check if a solved cell matches the value
+					++numReads;
+					uint16_t gridValue = grid[idx];
+
+					// If the Cell if Solved
+					if ((gridValue & SOLVED) == SOLVED)
+					{
+						// If the Cell is solved AND the value to check
+						if ((gridValue & ~(SOLVED)) == val)
+						{
+							// Break out of the "For Each Cell" Loop
+							r = NUM_CELLS;
+							c = NUM_CELLS;
+							sameRow = false;
+						}
+					}
+					// Check if an un-solved cell is able to be that value
+					else
+					{
+						if ((gridValue & NUMBERS[val]) == NUMBERS[val])
+						{
+							// Check Rows
+							if (lastPossibleRow == ROWS)
+							{
+								lastPossibleRow = r;
+							}
+							// If the remaining possibilities for this val are on different rows
+							else if (r != lastPossibleRow)
+							{
+								diffRows = true;
+							}
+							else
+							{
+								sameRow = true;
+							}
+
+							// Check Cols
+							if (lastPossibleCol == COLS)
+							{
+								lastPossibleCol = c;
+							}
+							// If the remaining possibilities for this val are in different Cols
+							else if (c != lastPossibleCol)
+							{
+								diffCols = true;
+							}
+							else
+							{
+								sameCol = true;
+							}
+						}
+
+					} // End If Solved
+				} // End For Col
+			} // End For Row
+
+			// Check if we found a value on the same row
+			if (sameRow && !diffRows)
+			{
+				// Update all other cells in this row (in other boxes)
+				for (uint16_t c = 0; c < COLS; ++c)
+				{
+					uint16_t idx = getIndex(lastPossibleRow, c);
+
+					// SKip over this box
+					if (BOX_INDEX[idx] != b)
+					{
+						// Only update un-solved cells
+						++numReads;
+						uint16_t gridValue = grid[idx];
+						if ((gridValue & SOLVED) == 0 &&
+							(gridValue & NUMBERS[val]) == NUMBERS[val])
+						{
+							// Bitwise AND with the ones compiment of the value to switch off only that bit
+							grid[idx] &= ~(NUMBERS[val]);
+							++numWrites;
+							anyCellsUpdated = true;
+
+							// Check if there is now only one possible value for this cell
+							checkCell(idx);
+						}
+					}
+				}
+			} // End If Same Row
+						// Check if we found a value on the same col
+			if (sameCol && !diffCols)
+			{
+				// Update all other cells in this Col (in other boxes)
+				for (uint16_t r = 0; r < ROWS; ++r)
+				{
+					uint16_t idx = getIndex(r, lastPossibleCol);
+
+					// SKip over this box
+					if (BOX_INDEX[idx] != b)
+					{
+						// Only update un-solved cells
+						++numReads;
+						uint16_t gridValue = grid[idx];
+						if ((gridValue & SOLVED) == 0 &&
+							(gridValue & NUMBERS[val]) == NUMBERS[val])
+						{
+							// Bitwise AND with the ones compiment of the value to switch off only that bit
+							grid[idx] &= ~(NUMBERS[val]);
+							++numWrites;
+							anyCellsUpdated = true;
+
+							// Check if there is now only one possible value for this cell
+							checkCell(idx);
+						}
+					}
+				}
+			} // End If Same Col
+		} // End for Val
+	} // End For Box
+
+	return anyCellsUpdated;
+}
+
+bool checkNakedRows()
+{
+	bool anyCellsUpdated = false;
+
+	for (uint16_t r = 0; r < ROWS; ++r)
+	{
+		// For each value
+		for (uint16_t val = 1; val < 10; ++val)
+		{
+
+			uint16_t lastPossibleBox = BOXES;
+			bool sameBox = false;
+			bool diffBoxes = false;
+
+			for (uint16_t c = 0; c < COLS; ++c)
+			{
+				uint16_t idx = getIndex(r, c);
+
+				// Check if a solved cell matches the value
+				++numReads;
+				uint16_t gridValue = grid[idx];
+
+				// If the Cell if Solved
+				if ((gridValue & SOLVED) == SOLVED)
+				{
+					// If the Cell is solved AND the value to check
+					if ((gridValue & ~(SOLVED)) == val)
+					{
+						// Break out of the "For Each Cell" Loop
+						c = NUM_CELLS;
+						sameBox = false;
+					}
+				}
+				// Check if an un-solved cell is able to be that value
+				else
+				{
+					if ((gridValue & NUMBERS[val]) == NUMBERS[val])
+					{
+						// Check Rows
+						if (lastPossibleBox == BOXES)
+						{
+							lastPossibleBox = BOX_INDEX[idx];
+						}
+						// If the remaining possibilities for this val are on different rows
+						else if (BOX_INDEX[idx] != lastPossibleBox)
+						{
+							diffBoxes = true;
+						}
+						else
+						{
+							sameBox = true;
+						}
+					}
+				}
+			}
+
+			if (sameBox && !diffBoxes)
+			{
+				// Get the Row of the first box cell
+				uint16_t startRow = BOX_ROW[lastPossibleBox];
+
+				// Get the Col of the first box cell
+				uint16_t startCol = BOX_COL[lastPossibleBox];
+
+				for (uint16_t rB = 0; rB < DIMENSION; ++rB)
+				{
+					for (uint16_t cB = 0; cB < DIMENSION; ++cB)
+					{
+						// Skip over this row
+						if (rB != r)
+						{
+							uint16_t idxB = getIndex(rB, cB);
+
+							// Only update un-solved cells
+							++numReads;
+							uint16_t gridValue = grid[idxB];
+							if ((gridValue & SOLVED) == 0 &&
+								(gridValue & NUMBERS[val]) == NUMBERS[val])
+							{
+								// Bitwise AND with the ones compiment of the value to switch off only that bit
+								grid[idxB] &= ~(NUMBERS[val]);
+								++numWrites;
+								anyCellsUpdated = true;
+
+								// Check if there is now only one possible value for this cell
+								checkCell(idxB);
+							}
+						}
+					}
+				}
+
+			}
+		}
+	}
+
+	return anyCellsUpdated;			
+}
+
+bool checkNakedCols()
+{
+	bool anyCellsUpdated = false;
+
+	for (uint16_t c = 0; c < COLS; ++c)
+	{
+		// For each value
+		for (uint16_t val = 1; val < 10; ++val)
+		{
+
+			uint16_t lastPossibleBox = BOXES;
+			bool sameBox = false;
+			bool diffBoxes = false;
+
+			for (uint16_t r = 0; r < ROWS; ++r)
+			{
+				uint16_t idx = getIndex(r, c);
+
+				// Check if a solved cell matches the value
+				++numReads;
+				uint16_t gridValue = grid[idx];
+
+				// If the Cell if Solved
+				if ((gridValue & SOLVED) == SOLVED)
+				{
+					// If the Cell is solved AND the value to check
+					if ((gridValue & ~(SOLVED)) == val)
+					{
+						// Break out of the "For Each Cell" Loop
+						c = NUM_CELLS;
+						sameBox = false;
+					}
+				}
+				// Check if an un-solved cell is able to be that value
+				else
+				{
+					if ((gridValue & NUMBERS[val]) == NUMBERS[val])
+					{
+						// Check Rows
+						if (lastPossibleBox == BOXES)
+						{
+							lastPossibleBox = BOX_INDEX[idx];
+						}
+						// If the remaining possibilities for this val are on different rows
+						else if (BOX_INDEX[idx] != lastPossibleBox)
+						{
+							diffBoxes = true;
+						}
+						else
+						{
+							sameBox = true;
+						}
+					}
+				}
+			}
+
+			if (sameBox && !diffBoxes)
+			{
+				// Get the Row of the first box cell
+				uint16_t startRow = BOX_ROW[lastPossibleBox];
+
+				// Get the Col of the first box cell
+				uint16_t startCol = BOX_COL[lastPossibleBox];
+
+				for (uint16_t rB = 0; rB < DIMENSION; ++rB)
+				{
+					for (uint16_t cB = 0; cB < DIMENSION; ++cB)
+					{
+						// Skip over this col
+						if (cB != c)
+						{
+							uint16_t idxB = getIndex(rB, cB);
+
+							// Only update un-solved cells
+							++numReads;
+							uint16_t gridValue = grid[idxB];
+							if ((gridValue & SOLVED) == 0 &&
+								(gridValue & NUMBERS[val]) == NUMBERS[val])
+							{
+								// Bitwise AND with the ones compiment of the value to switch off only that bit
+								grid[idxB] &= ~(NUMBERS[val]);
+								++numWrites;
+								anyCellsUpdated = true;
+
+								// Check if there is now only one possible value for this cell
+								checkCell(idxB);
+							}
+						}
+					}
+				}
+
+			}
+		}
+	}
+
+	return anyCellsUpdated;
 }
 
 // Print the grid
-void printGrid()
+void printGrid(bool debug)
 {
+	uint16_t MAX_WIDTH = 2;
+
+	if (debug) MAX_WIDTH = 4;
+
 	std::cout << std::endl;
 
 	for (uint16_t r = 0; r < ROWS; ++r)
@@ -378,11 +1001,11 @@ void printGrid()
 			// Only update un-solved cells
 			if ((grid[idx] & SOLVED) == 0)
 			{
-				printCell(grid[idx]);
+				printCell(grid[idx], debug);
 			}
 			else
 			{
-				printSolvedCell(grid[idx]);
+				printSolvedCell(grid[idx], debug);
 			}
 		}
 
@@ -392,7 +1015,7 @@ void printGrid()
 	std::cout << std::endl;
 }
 
-void printCell(uint16_t cellValue)
+void printCell(uint16_t cellValue, bool debug)
 {
 	/*
 	uint16_t num = 1;
@@ -408,13 +1031,14 @@ void printCell(uint16_t cellValue)
 
 	}
 	*/
-	//std::cout << std::setw(MAX_WIDTH) << cellValue << " ";
-	std::cout << std::setw(MAX_WIDTH) << "  " << " ";
+	if (debug) std::cout << std::setw(4) << cellValue << " ";
+	else std::cout << std::setw(2) << "  " << " ";
 }
 
-void printSolvedCell(uint16_t cellValue)
+void printSolvedCell(uint16_t cellValue, bool debug)
 {
-	std::cout << std::setw(MAX_WIDTH) << (cellValue & ~(SOLVED)) << " ";
+	if (debug) std::cout << std::setw(4) << (cellValue & ~(SOLVED)) << " ";
+	else std::cout << std::setw(2) << (cellValue & ~(SOLVED)) << " ";
 }
 
 // 16-bit Hamming Weight
