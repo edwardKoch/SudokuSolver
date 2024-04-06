@@ -4,6 +4,8 @@
 #include <iomanip>
 #include <stdint.h>
 
+#include "qqwing.hpp"
+
 const uint16_t DIMENSION = 3;
 
 static const uint16_t ROWS = DIMENSION * DIMENSION;
@@ -113,12 +115,12 @@ uint16_t getIndex(uint16_t row, uint16_t col);
 uint16_t getBox(uint16_t row, uint16_t col);
 
 // Set a given cell to a given value, and update all possibilities
-void updateCell(uint16_t row, uint16_t col, uint16_t value);
-void updateCell(uint16_t idx, uint16_t value);
+void updateCell(uint16_t row, uint16_t col, uint16_t value, bool init = false);
+void updateCell(uint16_t idx, uint16_t value, bool init = false);
 
-void updateRow(uint16_t row, uint16_t col, uint16_t value);
-void updateCol(uint16_t row, uint16_t col, uint16_t value);
-void updateBox(uint16_t row, uint16_t col, uint16_t value);
+void updateRow(uint16_t row, uint16_t col, uint16_t value, bool init = false);
+void updateCol(uint16_t row, uint16_t col, uint16_t value, bool init = false);
+void updateBox(uint16_t row, uint16_t col, uint16_t value, bool init = false);
 
 // Check all Rows/Cols/Boxes for any last possible values
 bool checkCell(uint16_t idx);
@@ -160,13 +162,27 @@ int main(uint16_t argc, char* argv[])
 	}
 
 	// Taken from an instance of https://qqwing.com/generate.html
+	/*
 	const char* sudokuString = "5..8.7..6.87.....9....5...2.9..82.14.2.1....541.6.......6.18......9.6...9..57....";
-
-	for (int i = 0; i < NUM_CELLS; ++i)
+	for (int i = 0; i < qqwing::BOARD_SIZE; ++i)
 	{
 		if (sudokuString[i] != '.')
 		{
 			updateCell(i, sudokuString[i] - '0');
+		}
+	}
+	*/
+
+	// Use QQWING to generate random puzzle
+	srand(unsigned(time(0)));
+	qqwing::SudokuBoard ss;
+	ss.generatePuzzle();
+	const int* board = ss.getPuzzle();
+	for (int i = 0; i < qqwing::BOARD_SIZE; ++i)
+	{
+		if (board[i] != 0)
+		{
+			updateCell(i, board[i], true);
 		}
 	}
 
@@ -188,9 +204,15 @@ int main(uint16_t argc, char* argv[])
 		updatedCells = updatedCells || checkRows();
 		updatedCells = updatedCells || checkCols();
 
-		updatedCells = updatedCells || checkNakedRows();
-		updatedCells = updatedCells || checkNakedCols();
-		updatedCells = updatedCells || checkNakedBoxes();
+		// Only do Complex Checks when nescessary
+		if (!updatedCells)
+		{
+			updatedCells = updatedCells || checkNakedRows();
+			updatedCells = updatedCells || checkNakedCols();
+			updatedCells = updatedCells || checkNakedBoxes();
+		}
+
+
 
 	}
 
@@ -226,12 +248,33 @@ int main(uint16_t argc, char* argv[])
 			}
 		}
 		std::cout << std::endl;
+		int givenCount = ss.getGivenCount();
+		int singleCount = ss.getSingleCount();
+		int hiddenSingleCount = ss.getHiddenSingleCount();
+		int nakedPairCount = ss.getNakedPairCount();
+		int hiddenPairCount = ss.getHiddenPairCount();
+		int pointingPairTripleCount = ss.getPointingPairTripleCount();
+		int boxReductionCount = ss.getBoxLineReductionCount();
+		int guessCount = ss.getGuessCount();
+		int backtrackCount = ss.getBacktrackCount();
+
+		std::cout << "Number of Givens: " << givenCount << std::endl;
+		std::cout << "Number of Singles: " << singleCount << std::endl;
+		std::cout << "Number of Hidden Singles: " << hiddenSingleCount << std::endl;
+		std::cout << "Number of Naked Pairs: " << nakedPairCount << std::endl;
+		std::cout << "Number of Hidden Pairs: " << hiddenPairCount << std::endl;
+		std::cout << "Number of Pointing Pairs/Triples: " << pointingPairTripleCount << std::endl;
+		std::cout << "Number of Box/Line Intersections: " << boxReductionCount << std::endl;
+		std::cout << "Number of Guesses: " << guessCount << std::endl;
+		std::cout << "Number of Backtracks: " << backtrackCount << std::endl;
 	}
 	else
 	{
 		std::cout << "SUCCESS!!" << std::endl;
+
 	}
 
+	std::cout << "Difficulty: " << ss.getDifficultyAsString() << std::endl;
 	std::cout << "Time Taken: " << duration.count() << "us" << std::endl;
 	std::cout << "Num Writes: " << numWrites << std::endl;
 	std::cout << "Num Reads : " << numReads << std::endl;
@@ -269,25 +312,25 @@ uint16_t getBox(uint16_t row, uint16_t col)
 }
 
 // Set a given cell to a given value, and update all possibilities
-void updateCell(uint16_t row, uint16_t col, uint16_t value)
+void updateCell(uint16_t row, uint16_t col, uint16_t value, bool init)
 {
 	grid[getIndex(row, col)] = SOLVED | value;
 	++numWrites;
 
-	updateRow(row, col, value);
-	updateCol(row, col, value);
-	updateBox(row, col, value);
+	updateRow(row, col, value, init);
+	updateCol(row, col, value, init);
+	updateBox(row, col, value, init);
 }
 
-void updateCell(uint16_t idx, uint16_t value)
+void updateCell(uint16_t idx, uint16_t value, bool init)
 {
 	uint16_t row = ROW_INDEX[idx];
 	uint16_t col = COL_INDEX[idx];
 
-	updateCell(row, col, value);
+	updateCell(row, col, value, init);
 }
 
-void updateRow(uint16_t row, uint16_t col, uint16_t value)
+void updateRow(uint16_t row, uint16_t col, uint16_t value, bool init)
 {
 	for (uint16_t c = 0; c < COLS; ++c)
 	{
@@ -301,12 +344,15 @@ void updateRow(uint16_t row, uint16_t col, uint16_t value)
 			++numWrites;
 
 			// Check if there is now only one possible value for this cell
-			checkCell(idx);
+			if (!init)
+			{
+				checkCell(idx);
+			}
 		}
 	}
 }
 
-void updateCol(uint16_t row, uint16_t col, uint16_t value)
+void updateCol(uint16_t row, uint16_t col, uint16_t value, bool init)
 {
 	for (uint16_t r = 0; r < ROWS; ++r)
 	{
@@ -320,12 +366,15 @@ void updateCol(uint16_t row, uint16_t col, uint16_t value)
 			++numWrites;
 
 			// Check if there is now only one possible value for this cell
-			checkCell(idx);
+			if (!init)
+			{
+				checkCell(idx);
+			}
 		}
 	}
 }
 
-void updateBox(uint16_t row, uint16_t col, uint16_t value)
+void updateBox(uint16_t row, uint16_t col, uint16_t value, bool init)
 {
 	// Get the index of the top left of this box
 	uint16_t box = getBox(row, col);
@@ -350,7 +399,10 @@ void updateBox(uint16_t row, uint16_t col, uint16_t value)
 				++numWrites;
 
 				// Check if there is now only one possible value for this cell
-				checkCell(idx);
+				if (!init)
+				{
+					checkCell(idx);
+				}
 			}
 		}
 	}
