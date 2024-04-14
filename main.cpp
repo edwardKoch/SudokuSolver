@@ -139,10 +139,15 @@ bool checkNakedBoxes();
 bool checkNakedRows();
 bool checkNakedCols();
 
-// Check for Hidden pairs
+// Check for Hidden pairs - with only 2 possibilities in a square
 bool checkHiddenBoxes();
 bool checkHiddenRows();
 bool checkHiddenCols();
+
+// Check for hidden pairs, with all possible pairs 
+bool checkHiddenBoxesV2();
+bool checkHiddenRowsV2();
+bool checkHiddenColsV2();
 
 // Print the grid
 void printGrid(bool debug = false);
@@ -175,6 +180,17 @@ int main(uint16_t argc, char* argv[])
 	ss.solve();
 	int* solution = (int*)ss.getSolution();
 
+	// Re-generate if this puzzle requires guesses or if it is an easy puzzle
+	while (ss.getGuessCount() != 0 ||
+		   ss.getDifficulty() == qqwing::SudokuBoard::Difficulty::EASY)
+	{
+		ss.generatePuzzle();
+		board = (int*)ss.getPuzzle();
+		ss.setRecordHistory(true);
+		ss.solve();
+		solution = (int*)ss.getSolution();
+	}
+
 	for (int i = 0; i < qqwing::BOARD_SIZE; ++i)
 	{
 		if (board[i] != 0)
@@ -185,12 +201,12 @@ int main(uint16_t argc, char* argv[])
 
 	
 	// Overwrite with a test string
-#if 1
+#if 0
 	for (uint16_t i = 0; i < NUM_CELLS; ++i)
 	{
 		grid[i] = 0x03FE;
 	}
-	const char* sudokuString = "..1..68...6....79.8.7...6.57.64.9...4.......628.61.94767.1584..1...6.578..8..716.";
+	const char* sudokuString = "79....3..51.7394..43...8....43..2....57.....38.93.514.971.538...84..75313.581.7..";
 	for (int i = 0; i < qqwing::BOARD_SIZE; ++i)
 	{
 		if (sudokuString[i] != '.')
@@ -234,12 +250,20 @@ int main(uint16_t argc, char* argv[])
 			updatedCells = updatedCells || checkNakedBoxes();
 		}
 
-		// Only do Extra Complex Checks when nescessary
+		// Only do Complex Checks when nescessary
 		if (!updatedCells)
 		{
 			updatedCells = updatedCells || checkHiddenRows();
-			//updatedCells = updatedCells || checkHiddenCols();
+			updatedCells = updatedCells || checkHiddenCols();
 			updatedCells = updatedCells || checkHiddenBoxes();
+		}
+
+		// Only do Extra Complex Checks when nescessary
+		if (!updatedCells)
+		{
+			updatedCells = updatedCells || checkHiddenRowsV2();
+			updatedCells = updatedCells || checkHiddenColsV2();
+			updatedCells = updatedCells || checkHiddenBoxesV2();
 		}
 	}
 
@@ -515,7 +539,7 @@ bool checkRows()
 			for (uint16_t val = 1; val < 10; ++val)
 			{
 				// If there is a single cell that is the last possibility for this value
-				last = getLastInCol(i, val);
+				last = getLastInRow(i, val);
 				if (last != NUM_CELLS)
 				{
 					updateCell(last, val);
@@ -1175,15 +1199,9 @@ bool checkHiddenRows()
 			}
 
 			// For every other cell in row
-			for (uint16_t c2 = 0; c2 < COLS; ++c2)
+			for (uint16_t c2 = c1 + 1; c2 < COLS; ++c2)
 			{
 				uint16_t idx2 = getIndex(r, c2);
-
-				// Skip the identical cells
-				if (idx1 == idx2)
-				{
-					continue;
-				}
 
 				++numReads;
 				uint16_t cell2 = grid[idx2];
@@ -1218,14 +1236,456 @@ bool checkHiddenRows()
 		} // End for every cell
 	} // End for every row
 
-
-
 	return anyCellsUpdated;
 }
 
 bool checkHiddenCols()
 {
 	bool anyCellsUpdated = false;
+
+	// For Every Col
+	for (uint16_t c = 0; c < COLS; ++c)
+	{
+		// For Every cell in col
+		for (uint16_t r1 = 0; r1 < ROWS; ++r1)
+		{
+			uint16_t idx1 = getIndex(r1, c);
+
+			++numReads;
+			uint16_t cell1 = grid[idx1];
+
+			// Check if this cell has 2 possibilities left
+			if (popCount(cell1) != 2)
+			{
+				continue;
+			}
+
+			// For every other cell in col
+			for (uint16_t r2 = r1 + 1; r2 < ROWS; ++r2)
+			{
+				uint16_t idx2 = getIndex(r2, c);
+
+				++numReads;
+				uint16_t cell2 = grid[idx2];
+
+				// If 2 different cells with a pop count of 2 exist, then we found a hidden pair
+				if (cell1 == cell2)
+				{
+					// For every other cell in the col, remove these 2 numbers as possibilities
+					for (uint16_t r3 = 0; r3 < ROWS; ++r3)
+					{
+						uint16_t idx3 = getIndex(r3, c);
+
+						if (idx3 != idx1 &&
+							idx3 != idx2)
+						{
+							++numReads;
+							uint16_t cell3 = grid[idx3];
+
+							// Skip solved cells
+							if ((cell3 & SOLVED) == 0 &&
+								(cell3 & cell1) != 0)
+							{
+								grid[idx3] &= (~cell1);
+								++numWrites;
+
+								anyCellsUpdated = true;
+							}
+						}
+					} // End for every other other cell
+				} // End if Cell1 == Cell 2
+			} // End for every other cell
+		} // End for every cell
+	} // End for every Col
+
+	return anyCellsUpdated;
+}
+
+// Check for hidden pairs, with all possible pairs 
+bool checkHiddenBoxesV2()
+{
+	bool anyCellsUpdated = false;
+
+	// For every pair of values
+	for (int val1 = 1; val1 < 10; ++val1)
+	{
+		for (int val2 = val1 + 1; val2 < 10; ++val2)
+		{
+			uint16_t valuePair = NUMBERS[val1] | NUMBERS[val2];
+
+			// For Each Box
+			for (uint16_t b = 0; b < BOXES; ++b)
+			{
+				// Get the Row of the first box cell
+				uint16_t startRow = BOX_ROW[b];
+
+				// Get the Col of the first box cell
+				uint16_t startCol = BOX_COL[b];
+
+				//  For Each cell in Box
+				for (uint16_t r1 = startRow; r1 < startRow + DIMENSION; ++r1)
+				{
+					for (uint16_t c1 = startCol; c1 < startCol + DIMENSION; ++c1)
+					{
+						uint16_t idx1 = getIndex(r1, c1);
+
+						++numReads;
+						uint16_t cell1 = grid[idx1];
+
+						// Check if cell1 matches the value pair
+						if ((cell1 & valuePair) != valuePair ||
+							(cell1 & SOLVED) == SOLVED)
+						{
+							continue;
+						}
+
+						//  For Each other cell in Box
+						for (uint16_t r2 = startRow; r2 < startRow + DIMENSION; ++r2)
+						{
+							for (uint16_t c2 = startCol; c2 < startCol + DIMENSION; ++c2)
+							{
+
+								uint16_t idx2 = getIndex(r2, c2);
+
+								++numReads;
+								uint16_t cell2 = grid[idx2];
+
+								// Check if cell 2 matches the value pair
+								if ((cell2 & valuePair) != valuePair ||
+									(cell2 & SOLVED) == SOLVED)
+								{
+									continue;
+								}
+
+								bool pairFound = true;
+
+								for (uint16_t r3 = startRow; r3 < startRow + DIMENSION; ++r3)
+								{
+									for (uint16_t c3 = startCol; c3 < startCol + DIMENSION; ++c3)
+									{
+										uint16_t idx3 = getIndex(r3, c3);
+
+										if (idx3 == idx1 ||
+											idx3 == idx2)
+										{
+											continue;
+										}
+
+										++numReads;
+										uint16_t cell3 = grid[idx3];
+
+										// Check if cell 3 matches either of the value pair
+										if (((cell3 & NUMBERS[val1]) == NUMBERS[val1] ||
+											(cell3 & NUMBERS[val2]) == NUMBERS[val2]) &&
+											(cell3 & SOLVED) != SOLVED)
+										{
+											pairFound = false;
+											break;
+										}
+									}
+									if (!pairFound)
+									{
+										break;
+									}
+								} // End Cell 3
+
+								// If a hidden pair is found, remove these 2 values from all other squares in the box
+								// And mark the 2 paired cells as only possible for the value pair
+								if (pairFound)
+								{
+									if (cell1 != valuePair ||
+										cell2 != valuePair)
+									{
+										grid[idx1] = valuePair;
+										++numWrites;
+										grid[idx2] = valuePair;
+										++numWrites;
+
+										anyCellsUpdated = true;
+									}
+
+									for (uint16_t r4 = startRow; r4 < startRow + DIMENSION; ++r4)
+									{
+										for (uint16_t c4 = startCol; c4 < startCol + DIMENSION; ++c4)
+										{
+											uint16_t idx4 = getIndex(r4, c4);
+
+											if (idx4 == idx1 ||
+												idx4 == idx2)
+											{
+												continue;
+											}
+
+											++numReads;
+											uint16_t cell4 = grid[idx4];
+
+											// Only update unsolved cells
+											if ((cell4 & SOLVED) != SOLVED &&
+												((cell4 & NUMBERS[val1]) == NUMBERS[val1] ||
+													(cell4 & NUMBERS[val2]) == NUMBERS[val2]))
+											{
+												grid[idx4] &= (~NUMBERS[val1]);
+												++numWrites;
+
+												grid[idx4] &= (~NUMBERS[val2]);
+												++numWrites;
+
+												anyCellsUpdated = true;
+											}
+										}
+									} // End Cell 4
+								} // End if pair found
+							}
+						} // End Cell 2
+					}
+				} // End Cell 1
+			} // End for each box
+		}
+	} // End for every value pair
+
+	return anyCellsUpdated;
+}
+
+bool checkHiddenRowsV2()
+{
+	bool anyCellsUpdated = false;
+
+	// For every pair of values
+	for (int val1 = 1; val1 < 10; ++val1)
+	{
+		for (int val2 = val1 + 1; val2 < 10; ++val2)
+		{
+			uint16_t valuePair = NUMBERS[val1] | NUMBERS[val2];
+
+			// For Every Row
+			for (uint16_t r = 0; r < ROWS; ++r)
+			{
+				// For Every cell in row
+				for (uint16_t c1 = 0; c1 < COLS; ++c1)
+				{
+					uint16_t idx1 = getIndex(r, c1);
+
+					++numReads;
+					uint16_t cell1 = grid[idx1];
+					
+					// Check if cell1 matches the value pair
+					if ((cell1 & valuePair) != valuePair ||
+						(cell1 & SOLVED) == SOLVED)
+					{
+						continue;
+					}
+
+					// For every other cell in row
+					for (uint16_t c2 = c1 + 1; c2 < COLS; ++c2)
+					{
+						uint16_t idx2 = getIndex(r, c2);
+
+						++numReads;
+						uint16_t cell2 = grid[idx2];
+
+						// Check if cell 2 matches the value pair
+						if ((cell2 & valuePair) != valuePair ||
+							(cell2 & SOLVED) == SOLVED)
+						{
+							continue;
+						}
+
+						bool pairFound = true;
+
+						// Check if any other cell matches either of the value pair
+						for (uint16_t c3 = 0; c3 < COLS; ++c3)
+						{
+							uint16_t idx3 = getIndex(r, c3);
+
+							if (idx3 == idx1 ||
+								idx3 == idx2)
+							{
+								continue;
+							}
+
+							++numReads;
+							uint16_t cell3 = grid[idx3];
+
+							// Check if cell 3 matches either of the value pair
+							if (((cell3 & NUMBERS[val1]) == NUMBERS[val1] ||
+								(cell3 & NUMBERS[val2]) == NUMBERS[val2]) &&
+								(cell3 & SOLVED) != SOLVED)
+							{
+								pairFound = false;
+								break;
+							}
+						}
+
+						// If a hidden pair is found, remove these 2 values from all other squares in the row
+						// And mark the 2 paired cells as only possible for the value pair
+						if (pairFound)
+						{
+							if (cell1 != valuePair ||
+								cell2 != valuePair)
+							{
+								grid[idx1] = valuePair;
+								++numWrites;
+								grid[idx2] = valuePair;
+								++numWrites;
+
+								anyCellsUpdated = true;
+							}
+
+							for (uint16_t c4 = 0; c4 < COLS; ++c4)
+							{
+								uint16_t idx4 = getIndex(r, c4);
+
+								if (idx4 == idx1 ||
+									idx4 == idx2)
+								{
+									continue;
+								}
+
+								++numReads;
+								uint16_t cell4 = grid[idx4];
+
+								// Only update unsolved cells
+								if ((cell4 & SOLVED) != SOLVED &&
+									((cell4 & NUMBERS[val1]) == NUMBERS[val1] ||
+									 (cell4 & NUMBERS[val2]) == NUMBERS[val2]))
+								{
+									grid[idx4] &= (~NUMBERS[val1]);
+									++numWrites;
+
+									grid[idx4] &= (~NUMBERS[val2]);
+									++numWrites;
+
+									anyCellsUpdated = true;
+								}
+							}
+						} // End if pair found
+					} // End for every other cell
+				} // End for every cell in row
+			} // End for every row
+		}
+	} // End for every value pair
+
+	return anyCellsUpdated;
+}
+
+bool checkHiddenColsV2()
+{
+	bool anyCellsUpdated = false;
+
+	// For every pair of values
+	for (int val1 = 1; val1 < 10; ++val1)
+	{
+		for (int val2 = val1 + 1; val2 < 10; ++val2)
+		{
+			uint16_t valuePair = NUMBERS[val1] | NUMBERS[val2];
+
+			// For Every Col
+			for (uint16_t c = 0; c < COLS; ++c)
+			{
+				// For Every cell in col
+				for (uint16_t r1 = 0; r1 < ROWS; ++r1)
+				{
+					uint16_t idx1 = getIndex(r1, c);
+
+					++numReads;
+					uint16_t cell1 = grid[idx1];
+
+					// Check if cell1 matches the value pair
+					if ((cell1 & valuePair) != valuePair ||
+						(cell1 & SOLVED) == SOLVED)
+					{
+						continue;
+					}
+
+					// For every other cell in col
+					for (uint16_t r2 = r1 + 1; r2 < ROWS; ++r2)
+					{
+						uint16_t idx2 = getIndex(r2, c);
+
+						++numReads;
+						uint16_t cell2 = grid[idx2];
+
+						// Check if cell 2 matches the value pair
+						if ((cell2 & valuePair) != valuePair ||
+							(cell2 & SOLVED) == SOLVED)
+						{
+							continue;
+						}
+
+						bool pairFound = true;
+
+						// Check if any other cell matches either of the value pair
+						for (uint16_t r3 = 0; r3 < ROWS; ++r3)
+						{
+							uint16_t idx3 = getIndex(r3, c);
+
+							if (idx3 == idx1 ||
+								idx3 == idx2)
+							{
+								continue;
+							}
+
+							++numReads;
+							uint16_t cell3 = grid[idx3];
+
+							// Check if cell 3 matches either of the value pair
+							if (((cell3 & NUMBERS[val1]) == NUMBERS[val1] ||
+								(cell3 & NUMBERS[val2]) == NUMBERS[val2]) &&
+								(cell3 & SOLVED) != SOLVED)
+							{
+								pairFound = false;
+								break;
+							}
+						}
+
+						// If a hidden pair is found, remove these 2 values from all other squares in the col
+						// And mark the 2 paired cells as only possible for the value pair
+						if (pairFound)
+						{
+							if (cell1 != valuePair ||
+								cell2 != valuePair)
+							{
+								grid[idx1] = valuePair;
+								++numWrites;
+								grid[idx2] = valuePair;
+								++numWrites;
+
+								anyCellsUpdated = true;
+							}
+
+							for (uint16_t r4 = 0; r4 < ROWS; ++r4)
+							{
+								uint16_t idx4 = getIndex(r4, c);
+
+								if (idx4 == idx1 ||
+									idx4 == idx2)
+								{
+									continue;
+								}
+
+								++numReads;
+								uint16_t cell4 = grid[idx4];
+
+								// Only update unsolved cells
+								if ((cell4 & SOLVED) != SOLVED &&
+									((cell4 & NUMBERS[val1]) == NUMBERS[val1] ||
+										(cell4 & NUMBERS[val2]) == NUMBERS[val2]))
+								{
+									grid[idx4] &= (~NUMBERS[val1]);
+									++numWrites;
+
+									grid[idx4] &= (~NUMBERS[val2]);
+									++numWrites;
+
+									anyCellsUpdated = true;
+								}
+							}
+						} // End if pair found
+					} // End for every other cell
+				} // End for every cell in col
+			} // End for every col
+		}
+	} // End for every value pair
 
 	return anyCellsUpdated;
 }
