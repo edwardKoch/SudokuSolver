@@ -139,6 +139,11 @@ bool checkNakedBoxes();
 bool checkNakedRows();
 bool checkNakedCols();
 
+// Check for Hidden pairs
+bool checkHiddenBoxes();
+bool checkHiddenRows();
+bool checkHiddenCols();
+
 // Print the grid
 void printGrid(bool debug = false);
 
@@ -161,23 +166,15 @@ int main(uint16_t argc, char* argv[])
 		grid[i] = 0x03FE;
 	}
 
-	// Taken from an instance of https://qqwing.com/generate.html
-	/*
-	const char* sudokuString = "5..8.7..6.87.....9....5...2.9..82.14.2.1....541.6.......6.18......9.6...9..57....";
-	for (int i = 0; i < qqwing::BOARD_SIZE; ++i)
-	{
-		if (sudokuString[i] != '.')
-		{
-			updateCell(i, sudokuString[i] - '0');
-		}
-	}
-	*/
-
 	// Use QQWING to generate random puzzle
 	srand(unsigned(time(0)));
 	qqwing::SudokuBoard ss;
 	ss.generatePuzzle();
-	const int* board = ss.getPuzzle();
+	int* board = (int*)ss.getPuzzle();
+	ss.setRecordHistory(true);
+	ss.solve();
+	int* solution = (int*)ss.getSolution();
+
 	for (int i = 0; i < qqwing::BOARD_SIZE; ++i)
 	{
 		if (board[i] != 0)
@@ -186,6 +183,31 @@ int main(uint16_t argc, char* argv[])
 		}
 	}
 
+	
+	// Overwrite with a test string
+#if 1
+	for (uint16_t i = 0; i < NUM_CELLS; ++i)
+	{
+		grid[i] = 0x03FE;
+	}
+	const char* sudokuString = "..1..68...6....79.8.7...6.57.64.9...4.......628.61.94767.1584..1...6.578..8..716.";
+	for (int i = 0; i < qqwing::BOARD_SIZE; ++i)
+	{
+		if (sudokuString[i] != '.')
+		{
+			board[i] = sudokuString[i] - '0';
+			updateCell(i, sudokuString[i] - '0');
+		}
+		else
+		{
+			board[i] = 0;
+		}
+	}
+	ss.setPuzzle(board);
+	ss.setRecordHistory(true);
+	ss.solve();
+	solution = (int*)ss.getSolution();
+#endif
 	printGrid();
 
 	// Reset Statistics after setup
@@ -212,19 +234,24 @@ int main(uint16_t argc, char* argv[])
 			updatedCells = updatedCells || checkNakedBoxes();
 		}
 
-
-
+		// Only do Extra Complex Checks when nescessary
+		if (!updatedCells)
+		{
+			updatedCells = updatedCells || checkHiddenRows();
+			//updatedCells = updatedCells || checkHiddenCols();
+			updatedCells = updatedCells || checkHiddenBoxes();
+		}
 	}
 
 	auto stop = std::chrono::high_resolution_clock::now();
 
 	printGrid();
 
-	// Check if grid was completed or nah
+	// Check if grid was completed successfully or nah
 	uint16_t numFailed = 0;
 	for (int i = 0; i < NUM_CELLS; ++i)
 	{
-		if ((grid[i] & SOLVED) == 0)
+		if ((grid[i] & (~SOLVED)) != solution[i])
 		{
 			++numFailed;
 		}
@@ -248,6 +275,25 @@ int main(uint16_t argc, char* argv[])
 			}
 		}
 		std::cout << std::endl;
+		for (int i = 0; i < NUM_CELLS; ++i)
+		{
+			std::cout << solution[i];
+		}
+		std::cout << std::endl;
+		for (int i = 0; i < NUM_CELLS; ++i)
+		{
+			if ((grid[i] & (~SOLVED)) != solution[i] &&
+				(grid[i] & SOLVED) != 0)
+			{
+				std::cout << (grid[i] & ~(SOLVED));
+			}
+			else
+			{
+				std::cout << ' ';
+			}
+		}
+		std::cout << std::endl;
+
 		int givenCount = ss.getGivenCount();
 		int singleCount = ss.getSingleCount();
 		int hiddenSingleCount = ss.getHiddenSingleCount();
@@ -267,6 +313,8 @@ int main(uint16_t argc, char* argv[])
 		std::cout << "Number of Box/Line Intersections: " << boxReductionCount << std::endl;
 		std::cout << "Number of Guesses: " << guessCount << std::endl;
 		std::cout << "Number of Backtracks: " << backtrackCount << std::endl;
+
+		ss.printSolveInstructions();
 	}
 	else
 	{
@@ -833,10 +881,10 @@ bool checkNakedRows()
 		// For each value
 		for (uint16_t val = 1; val < 10; ++val)
 		{
-
 			uint16_t lastPossibleBox = BOXES;
 			bool sameBox = false;
 			bool diffBoxes = false;
+			bool numberSolved = false;
 
 			for (uint16_t c = 0; c < COLS; ++c)
 			{
@@ -852,9 +900,9 @@ bool checkNakedRows()
 					// If the Cell is solved AND the value to check
 					if ((gridValue & ~(SOLVED)) == val)
 					{
-						// Break out of the "For Each Cell" Loop
-						c = NUM_CELLS;
-						sameBox = false;
+						numberSolved = true;
+						// Stop checking this value
+						break;
 					}
 				}
 				// Check if an un-solved cell is able to be that value
@@ -871,6 +919,8 @@ bool checkNakedRows()
 						else if (BOX_INDEX[idx] != lastPossibleBox)
 						{
 							diffBoxes = true;
+							// Stop checking this value
+							break;
 						}
 						else
 						{
@@ -880,7 +930,7 @@ bool checkNakedRows()
 				}
 			}
 
-			if (sameBox && !diffBoxes)
+			if (sameBox && !diffBoxes && !numberSolved)
 			{
 				// Get the Row of the first box cell
 				uint16_t startRow = BOX_ROW[lastPossibleBox];
@@ -888,9 +938,9 @@ bool checkNakedRows()
 				// Get the Col of the first box cell
 				uint16_t startCol = BOX_COL[lastPossibleBox];
 
-				for (uint16_t rB = 0; rB < DIMENSION; ++rB)
+				for (uint16_t rB = startRow; rB < startRow +DIMENSION; ++rB)
 				{
-					for (uint16_t cB = 0; cB < DIMENSION; ++cB)
+					for (uint16_t cB = startCol; cB < startCol + DIMENSION; ++cB)
 					{
 						// Skip over this row
 						if (rB != r)
@@ -986,9 +1036,9 @@ bool checkNakedCols()
 				// Get the Col of the first box cell
 				uint16_t startCol = BOX_COL[lastPossibleBox];
 
-				for (uint16_t rB = 0; rB < DIMENSION; ++rB)
+				for (uint16_t rB = startRow; rB < startRow + DIMENSION; ++rB)
 				{
-					for (uint16_t cB = 0; cB < DIMENSION; ++cB)
+					for (uint16_t cB = startCol; cB < startCol + DIMENSION; ++cB)
 					{
 						// Skip over this col
 						if (cB != c)
@@ -1016,6 +1066,166 @@ bool checkNakedCols()
 			}
 		}
 	}
+
+	return anyCellsUpdated;
+}
+
+bool checkHiddenBoxes()
+{
+	bool anyCellsUpdated = false;
+
+	// For Each Box
+	for (uint16_t b = 0; b < BOXES; ++b)
+	{
+		// Get the Row of the first box cell
+		uint16_t startRow = BOX_ROW[b];
+
+		// Get the Col of the first box cell
+		uint16_t startCol = BOX_COL[b];
+
+		//  For Each cell in Box
+		for (uint16_t r1 = startRow; r1 < startRow + DIMENSION; ++r1)
+		{
+			for (uint16_t c1 = startCol; c1 < startCol + DIMENSION; ++c1)
+			{
+				uint16_t idx1 = getIndex(r1, c1);
+
+				++numReads;
+				uint16_t cell1 = grid[idx1];
+
+				// Check if this cell has 2 possibilities left
+				if (popCount(cell1) != 2)
+				{
+					continue;
+				}
+
+				//  For Each other cell in Box
+				for (uint16_t r2 = startRow; r2 < startRow + DIMENSION; ++r2)
+				{
+					for (uint16_t c2 = startCol; c2 < startCol + DIMENSION; ++c2)
+					{
+						uint16_t idx2 = getIndex(r2, c2);
+
+						// Skip the identical cells
+						if (idx1 == idx2)
+						{
+							continue;
+						}
+
+						++numReads;
+						uint16_t cell2 = grid[idx2];
+
+						// If 2 different cells with a pop count of 2 exist, then we found a hidden pair
+						if (cell1 == cell2)
+						{
+							// For every other cell in the box, remove these 2 numbers as possibilities
+							for (uint16_t r3 = startRow; r3 < startRow + DIMENSION; ++r3)
+							{
+								for (uint16_t c3 = startCol; c3 < startCol + DIMENSION; ++c3)
+								{
+									uint16_t idx3 = getIndex(r3, c3);
+
+									if (idx3 != idx1 &&
+										idx3 != idx2)
+									{
+										++numReads;
+										uint16_t cell3 = grid[idx3];
+
+										// Skip solved cells
+										if ((cell3 & SOLVED) == 0 &&
+											(cell3 & cell1) != 0)
+										{
+											grid[idx3] &= (~cell1);
+											++numWrites;
+
+											anyCellsUpdated = true;
+										}
+									}
+								}
+							}
+						} // End if cell1 == cell 2
+					}
+				} // End For every other cell
+			}
+		} // End for every cell
+	} // End for every Box
+
+	return anyCellsUpdated;
+}
+
+bool checkHiddenRows()
+{
+	bool anyCellsUpdated = false;
+
+	// For Every Row
+	for (uint16_t r = 0; r < ROWS; ++r)
+	{
+		// For Every cell in row
+		for (uint16_t c1 = 0; c1 < COLS; ++c1)
+		{
+			uint16_t idx1 = getIndex(r, c1);
+
+			++numReads;
+			uint16_t cell1 = grid[idx1];
+
+			// Check if this cell has 2 possibilities left
+			if (popCount(cell1) != 2)
+			{
+				continue;
+			}
+
+			// For every other cell in row
+			for (uint16_t c2 = 0; c2 < COLS; ++c2)
+			{
+				uint16_t idx2 = getIndex(r, c2);
+
+				// Skip the identical cells
+				if (idx1 == idx2)
+				{
+					continue;
+				}
+
+				++numReads;
+				uint16_t cell2 = grid[idx2];
+
+				// If 2 different cells with a pop count of 2 exist, then we found a hidden pair
+				if (cell1 == cell2)
+				{
+					// For every other cell in the row, remove these 2 numbers as possibilities
+					for (uint16_t c3 = 0; c3 < COLS; ++c3)
+					{
+						uint16_t idx3 = getIndex(r, c3);
+
+						if (idx3 != idx1 &&
+							idx3 != idx2)
+						{
+							++numReads;
+							uint16_t cell3 = grid[idx3];
+
+							// Skip solved cells
+							if ((cell3 & SOLVED) == 0 &&
+								(cell3 & cell1) != 0)
+							{
+								grid[idx3] &= (~cell1);
+								++numWrites;
+
+								anyCellsUpdated = true;
+							}
+						}
+					} // End for every other other cell
+				} // End if Cell1 == Cell 2
+			} // End for every other cell
+		} // End for every cell
+	} // End for every row
+
+
+
+	return anyCellsUpdated;
+}
+
+bool checkHiddenCols()
+{
+	bool anyCellsUpdated = false;
 
 	return anyCellsUpdated;
 }
@@ -1083,7 +1293,7 @@ void printCell(uint16_t cellValue, bool debug)
 
 	}
 	*/
-	if (debug) std::cout << std::setw(4) << cellValue << " ";
+	if (debug) std::cout << std::setfill('-') << std::setw(4) << cellValue << " " << std::setfill(' ');
 	else std::cout << std::setw(2) << "  " << " ";
 }
 
